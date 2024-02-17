@@ -1,1 +1,2 @@
-pyqt5
+nicegui
+#pyqt6
