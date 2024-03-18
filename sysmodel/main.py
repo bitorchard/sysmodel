@@ -41,6 +41,17 @@ class HTTPGetEvents():
     def get_request_size(self):
         return self.request_size
 
+    def split(self, n_ways):
+        splits = []
+        split_size = self.num_events // n_ways
+        mod_size = self.num_events % n_ways
+        for i in range(n_ways):
+            if i == n_ways - 1 and mod_size != 0:
+                split_size = mod_size
+            splits.append(HTTPGetEvents(split_size, self.request_size))
+
+        return splits
+
 
 class Reg():
     element_registry = {}
@@ -75,7 +86,7 @@ class EditAttrsMenu():
                 ui.button("Save", on_click=self.component_view.close_edits_menu)
 
     def edit_value(self, name, edit):
-        print("set value: (%s=%s)" % (name, edit.value))
+        #print("set value: (%s=%s)" % (name, edit.value))
         self.edits[name] = edit.value
 
     def save_and_close(self):
@@ -83,6 +94,7 @@ class EditAttrsMenu():
             value = self.edits.get(a.name)
             if value is not None:
                 a.set_func(a.the_type(value))
+                #print("assign value: (%s=%s)" % (a.name, a.the_type(value)))
         self.element.clear()
         self.element.delete()
         #self.element = None
@@ -134,10 +146,10 @@ global_state = GlobalState()
 
 def global_on_click(callback, event_props):
     print("global_on_click")
-    #print(dir(event_props.client))
-    #print(dir(event_props.sender))
-    print(event_props)
-    if global_state.is_events_enabled() and global_state.get_active_workflow() is None:
+    active_workflow = global_state.get_active_workflow()
+    if active_workflow is not None:
+        active_workflow.handle_event(event_props)
+    elif global_state.is_events_enabled():
         callback(event_props)
 
 
@@ -148,51 +160,62 @@ def body_on_click(event_props):
 
 
 class Workflow():
-    def __init__(self, component):
+    def __init__(self, component, component_view):
+        self.component_view = component_view
+        self.component = component
         self.temp_div = None
 
     def start_workflow(self, event_props):
         global global_state
-        with global_state.get_parent_container():
-            self.temp_div = ui.element('div').classes("static bg-light-grey-1 relative w-full h-[800px]")
-            self.temp_div.on('click', self.end_workflow)
+        #with global_state.get_parent_container():
+        #    self.temp_div = ui.element('div').classes("static bg-light-grey-1 relative w-full h-[800px]")
+        #    self.temp_div.on('click', self.end_workflow)
         global_state.set_active_workflow(self)
 
     def end_workflow(self, event_props):
         global global_state
         global_state.set_active_workflow(None)
-        self.temp_div.clear()
-        self.temp_div.delete()
+        #self.temp_div.clear()
+        #self.temp_div.delete()
 
 
 class AttachWorkflow(Workflow):
-    def __init__(self, component):
-        super().__init__(component)
+    def __init__(self, component, component_view):
+        super().__init__(component, component_view)
 
     def start_workflow(self, event_props):
         super().start_workflow(event_props)
-        #if global_state.get_active_workflow() is not None:
-        #    return
         print("Starting workflow")
-        #ui.query('body').on_click('click', self.end_workflow())
         ui.query('body').style("cursor: pointer")
-        #global_state.get_parent_container().on('click', self.end_workflow)
-        #ui.query('body').
 
-    def end_workflow(self, event_props):
-        super().end_workflow(event_props)
+    def end_workflow(self, event_props, target):
         print("Ending workflow")
         ui.query('body').style("cursor: default")
-        #global_state.get_parent_container().on('click', None)
-        #print(dir(event_props))
+        self.component.add_consumer(target.component)
+        print(dir(self.component_view.element))
+        top = target.get_position()[0]+50
+        left = self.component_view.get_position()[1]+100
+        width = 150
+        #width = target.get_position()[1] - left - 100
+        print("top: %d, left: %d, width: %d" % (top, left, width))
+        global parent_div
+        with parent_div:
+            #pass
+            ui.image(IMAGE_DIR_PATH / "arrow_right.png").classes("absolute top-[%dpx] left-[%dpx] h-[5px] w-[%dpx]" % (top, left, width))
+        super().end_workflow(event_props)
 
-        #print(dir(event_props.client))
-        #print(dir(event_props.sender))
-        #print(event_props.client)
-        #print(event_props.sender)
-        #print(event_props)
-        #print(event_props.target)
-        #print(Reg.get(event_props.sender))
+    def handle_event(self, event_props):
+        view = Reg.get(event_props.sender)
+        if view is not None and isinstance(view, ComponentView):
+            self.end_workflow(event_props, view)
+
+
+def noop(event_props):
+    print("noop")
+
+
+def set_on_click(element, callback):
+    element.on('click', partial(global_on_click, callback))
 
 
 class ComponentView():
@@ -214,19 +237,23 @@ class ComponentView():
         with self.parent:
             self.element = ui.element('div')
             with self.element:
-                ui.image(self.image)
+                img = ui.image(self.image)
+                set_on_click(img, noop)
+                Reg.add(img, self)
                 with ui.element('div').classes("m-1 border-solid border-2 w-100%"):
                     ai = ui.image(IMAGE_DIR_PATH / "attach.png")
                     ai.classes("m-1 w-[20px] h-[20px]")
-                    flow = AttachWorkflow(self.component)
-                    ai.on('click', partial(global_on_click, flow.start_workflow))
+                    flow = AttachWorkflow(self.component, self)
+                    set_on_click(ai, flow.start_workflow)
 
                     gear = ui.image(IMAGE_DIR_PATH / "gear.png")
                     gear.classes("m-1 w-[20px] h-[20px]")
                     gear.on('click', partial(global_on_click, self.show_edit_menu), ['offsetX', 'offsetY'])
 
         self.element.on('dragstart', pickup_card, ['offsetX', 'offsetY'])
-        self.element.props('draggable').classes("w-[90px] top-[%dpx] left-[%dpx] absolute cursor-pointer" % (top, left))
+        self.element.props('draggable').classes("w-[90px] absolute cursor-pointer")
+        #self.element.props('draggable').classes("w-[90px] top-[%dpx] left-[%dpx] absolute cursor-pointer" % (top, left))
+        self.set_position((top, left))
         Reg.add(self.element, self)
 
     def show_edit_menu(self, event_props):
@@ -239,6 +266,13 @@ class ComponentView():
     def close_edits_menu(self):
         self.edits_menu.save_and_close()
         self.is_menu_active = False
+
+    def set_position(self, position):
+        self.element.classes("top-[%dpx] left-[%dpx]" % (position[0], position[1]))
+        self.position = position
+
+    def get_position(self):
+        return self.position
 
     #def component(self):
     #    return Reg.get(self.element)
@@ -260,14 +294,28 @@ class WebServerView(ComponentView):
         Counter(self)
 
 
+class LoadBalancerView(ComponentView):
+    def __init__(self, component, parent):
+        super().__init__(component, parent)
+        self.image = IMAGE_DIR_PATH / "lb.png"
+
+
 class Component():
     def __init__(self):
         self.image = None
         self.element = None
         self.parent = None
         self.consumers = []
+        self.is_component_active = True
+
+    def is_active(self):
+        return self.is_component_active
+
+    def set_active(self, active):
+        self.is_component_active = active
 
     def add_consumer(self, consumer):
+        print("%s add_consumer: %s" % (self, consumer))
         self.consumers.append(consumer)
 
 
@@ -294,9 +342,44 @@ class WebClient(Component):
         self.num_clients = num_clients
 
     def send_to_consumers(self, duration_secs=1):
-        events = HTTPGetEvents(self.request_rate * duration_secs, 100)
-        for consumer in self.consumers:
+        events = HTTPGetEvents(self.request_rate * self.num_clients * duration_secs, 100)
+        active_consumers = [c for c in self.consumers if c.is_active()]
+        for consumer in active_consumers:
             consumer.consume(events, duration_secs)
+
+
+class LoadBalancer(Component):
+    def __init__(self):
+        super().__init__()
+        self.pending_events = []
+
+    def get_attributes(self):
+        return []
+
+    def consume(self, events, duration):
+        self.pending_events.append(events)
+
+    def send_to_consumers(self, duration_secs=1):
+        if len(self.pending_events) == 0:
+            return
+        events_per_consumer = len(self.consumers) // len(self.pending_events)
+        active_consumers = [c for c in self.consumers if c.is_active()]
+        while len(self.pending_events) > 0:
+            events = self.pending_events.pop()
+            if len(active_consumers) == 0:
+                continue
+            events_slices = events.split(len(active_consumers))
+            for consumer in active_consumers:
+                this_slice = events_slices.pop()
+                #print("sending %d events to %s" % (this_slice.get_num_events(), consumer))
+                #range_end = min(events_per_consumer, len(self.pending_events))
+                #events_slice = self.pending_events[0:range_end]
+                #del self.pending_events[0:range_end]
+                consumer.consume(this_slice, duration_secs)
+
+
+def Bool(value):
+    return True if value == "True" else False
 
 
 class WebServer(Component):
@@ -309,7 +392,8 @@ class WebServer(Component):
 
     def get_attributes(self):
         return [Attr("num_threads", self.get_num_threads, self.set_num_threads, int),
-               Attr("op_latency_ms", self.get_op_latency_ms, self.set_op_latency_ms, int)]
+               Attr("op_latency_ms", self.get_op_latency_ms, self.set_op_latency_ms, int),
+               Attr("is_active", self.is_active, self.set_active, Bool)]
 
     def get_num_threads(self):
         return self.num_threads
@@ -327,15 +411,18 @@ class WebServer(Component):
         ops_per_sec = self.num_threads * (1000 / self.op_latency_ms)
         ops_per_duration = ops_per_sec * duration
         if isinstance(events, HTTPGetEvents):
-            failed_events = events.get_num_events() - ops_per_duration
+            failed_events = max(events.get_num_events() - ops_per_duration, 0)
             self.failed_events += failed_events
-            self.succeeded_events += ops_per_duration
+            self.succeeded_events += events.get_num_events() - failed_events
             if failed_events > 0:
                 #ui.notify("Failed to process %d events" % failed_events, color='red')
                 pass
             else:
                 #ui.notify("GOOD JOB! You processed all events", color='green')
                 pass
+
+    def send_to_consumers(self, duration_secs=1):
+        return
 
 the_card = None
 selected_file = IMAGE_DIR_PATH / "default.png"
@@ -353,20 +440,24 @@ def update_cursor(image):
     global selected_file
     global parent_div
     print("Updating cursor: %s" % image)
-    selected_file =  IMAGE_DIR_PATH / ("%s.%s" % (image.value, "png"))
-    with parent_div:
-        create_image_div(selected_file)
+    server = WebServer()
+    WebServerView(server, parent_div).add_to_view(200, 500)
+    #selected_file =  IMAGE_DIR_PATH / ("%s.%s" % (image.value, "png"))
+    #with parent_div:
+    #    create_image_div(selected_file)
 
 files = [f for f in IMAGE_DIR_PATH.iterdir() if f.is_file()]
-select = ui.select([f.stem for f in files], on_change=None)
-#select = ui.select([f.stem for f in files], on_change=update_cursor)
+#select = ui.select([f.stem for f in files], on_change=None)
+select = ui.select([f.stem for f in files], on_change=update_cursor)
 
 def move_card(event_props) -> None:
     print(event_props)
     global the_card
     offset = (event_props.args['offsetY'], event_props.args['offsetX'])
-    new_card_loc = (offset[0]-click_offset[0], offset[1]-click_offset[1])
-    the_card.classes("top-[%dpx] left-[%dpx]" % (new_card_loc[0], new_card_loc[1]))
+    new_card_pos = (offset[0]-click_offset[0], offset[1]-click_offset[1])
+    c = Reg.get(the_card)
+    c.set_position(new_card_pos)
+    #the_card.classes("top-[%dpx] left-[%dpx]" % (new_card_loc[0], new_card_loc[1]))
 
 def pickup_card(event_props):
     global the_card
@@ -381,14 +472,16 @@ def dop():
 def dl():
     pass
 
-def loop_me(client_view):
-    #print("Looping")
-    duration_secs = 5
-    client = client_view.component
+def loop_me(components):
+    duration_secs = 1
+    #client = client_view.component
     while True:
         time.sleep(duration_secs)
-        with client_view.element:
-            client.send_to_consumers(duration_secs)
+        for c in components:
+            #print("send to consumers: %s" % c)
+            c.send_to_consumers(duration_secs)
+        #with client_view.element:
+        #    client.send_to_consumers(duration_secs)
 
 parent_div = ui.element('div').classes("bg-light-grey-1 relative w-full h-[800px]")
 global_state.set_parent_container(parent_div)
@@ -397,17 +490,18 @@ parent_div.on('dragover.prevent', dop)
 parent_div.on('dragleave', dl)
 with parent_div:
     server = WebServer()
+    lb = LoadBalancer()
     client = WebClient()
-    client.add_consumer(server)
+    #client.add_consumer(server)
 
-    cv = WebClientView(client, parent_div)
-    cv.add_to_view(400, 300)
-    WebServerView(server, parent_div).add_to_view(400, 750)
+    LoadBalancerView(lb, parent_div).add_to_view(400, 540)
+    WebClientView(client, parent_div).add_to_view(400, 250)
+    WebServerView(server, parent_div).add_to_view(400, 800)
     #create_image_div(IMAGE_DIR_PATH / "html.png", 450, 500, 50, 150)
     #create_image_div(selected_file)
 
     #loop_me()
-    t = threading.Thread(target=loop_me, args=(cv,), daemon=True)
+    t = threading.Thread(target=loop_me, args=([client, lb, server],), daemon=True)
     t.start()
     #t.join()
 
