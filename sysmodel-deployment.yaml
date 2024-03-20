@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sysmodel
+spec:
+  selector:
+    matchLabels:
+      app: sysmodel
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: sysmodel
+    spec:
+      hostname: pickpix
+      containers:
+        - image: localhost:5000/sysmodel:latest
+          name: sysmodel
+          imagePullPolicy: Always
+          command: ["/sysmodel/start_httpd.sh"]
+            #command: ["tail", "-f", "/dev/null"]

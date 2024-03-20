@@ -11,18 +11,10 @@ import time
 import sys
 import signal
 
-def signal_handler(signal, frame):
-    print("You pressed Ctrl+C!")
-    #sys.exit(0)
-
-#catchable_sigs = set(signal.Signals) - {signal.SIGSTOP}
-#catchable_sigs = set(signal.Signals) - {signal.SIGKILL, signal.SIGSTOP}
-#for sig in catchable_sigs:
-#    signal.signal(sig, signal_handler)
-#signal.signal(signal.SIGINT, signal_handler)
 
 class Item(Protocol):
     title: str
+
 
 @dataclass
 class ToDo:
@@ -86,7 +78,6 @@ class EditAttrsMenu():
                 ui.button("Save", on_click=self.component_view.close_edits_menu)
 
     def edit_value(self, name, edit):
-        #print("set value: (%s=%s)" % (name, edit.value))
         self.edits[name] = edit.value
 
     def save_and_close(self):
@@ -94,10 +85,8 @@ class EditAttrsMenu():
             value = self.edits.get(a.name)
             if value is not None:
                 a.set_func(a.the_type(value))
-                #print("assign value: (%s=%s)" % (a.name, a.the_type(value)))
         self.element.clear()
         self.element.delete()
-        #self.element = None
 
 
 class Counter():
@@ -506,3 +495,4 @@ with parent_div:
     #t.join()
 
 ui.run()
+#ui.run(host="0.0.0.0", port=80)
